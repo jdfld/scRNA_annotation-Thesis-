@@ -4,9 +4,14 @@
 
 This is a bachelor thesis in Computer Science at KTH. 
 
-We have created an auto-annotation model regarding cells, given specific gene-expressions. 
+We are creating an auto-annotation of celltypes, which aims to label celltypes automatically given our trained model. 
 
 ## Method
+
+1. Preprocessing
+2. Filtering 
+3. Training 
+4. Predictions on test data
 
 ## Data
 
@@ -16,4 +21,6 @@ These datasets have been created by Linnarsson labs project: https://github.com/
 
 ### Authors
 
-Johan Lindqvist, Fredrik Ström
+[Johan Lindqvist]
+
+[Fredrik Ström]
