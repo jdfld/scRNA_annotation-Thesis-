@@ -16,8 +16,8 @@ import harmonypy as hrm
 #import skmisc
 #import scanorama
 import sklearn as sk
-import xgboost
-import pynndescent
+#import xgboost
+#import pynndescent
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
