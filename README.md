@@ -1,5 +1,7 @@
 # Single cell RNA annotation model
 
+![Cool cell](http://url/to/img.png)
+
 ## Project
 
 This is a bachelor thesis in Computer Science at KTH. 
