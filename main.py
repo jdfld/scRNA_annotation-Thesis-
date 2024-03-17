@@ -1,6 +1,8 @@
 import data_proc_methods as dp
 import model
+import numpy as np
 import scanpy as sc
+from scipy import sparse
 
 #adata_chunk1 = data_proc_methods.pipeline('data_chunk1.h5ad')
 
@@ -21,3 +23,4 @@ thalamic_data = dp.pipeline('thalamic_complex24327.h5ad')
 print('Loaded')
 sc.pp.neighbors(thalamic_data,n_pcs=50,use_rep='X_harmony')
 print('Finished')
+
