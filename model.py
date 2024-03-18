@@ -2,40 +2,35 @@ import sklearn as sk
 import numpy as np
 from torch import nn
 import torch
-from torch.utils import dataloader
-from scipy import sparse
 
-def align(mapping,data):
-    # realigns data to fit mapping using matrix multiplication
-    # uses more efficient sparse matrix mult.
-    # requires data sorted according to gene order
-    return sparse.csr_matrix.dot(data,mapping)
-
-def map_genes(self,gene_expr):
-    # map genes to the same format as training data as a matrix
-    # the mapping is a sparse matrix 
-    # that when multiplied with data transforms it into the same shape as the embedders training data
-    # assumes data has been sorted along genes
-    gene_count = len(gene_expr)
-    i,j = 0,0
-    mapping = np.zeros((gene_count,self.emb_count))
-    while i < self.emb_count and j < gene_count:
-        if self.emb_genes[i] == gene_expr[j]:
-            mapping[i][j] = 1
-            i += 1
-            j += 1
-        elif self.emb_genes[i] < gene_expr[j]:
-            i += 1
-        else:
-            j += 1
-    return sparse.csr_matrix(mapping)
-
-def train_nn(data,model,optimizer,criterion,epochs):
+# improvements to NN:
+# LR scheduling, currently the loss improvement is weirdly terrible
+# it almost appears to be fully taught after just a single batch of 1000 samples
+# try smaller batch sizes
+# fix issues with using GPUs
+# would be nice to look into what would be necessary in order to actually run stuff on google cloud
+# deeper/wider https://blog.research.google/2021/05/do-wide-and-deep-networks-learn-same.html
+# more data
+# perhaps more fancy techniques such as skip connections 
+# 
+# test on differently sampled data and data from other source.
+# current model can achieve 98.6 % accuracy on unseen data
+# when sampled from the same distribution (training, subchunk1_0) (validation, subchunk1_1)
+# expects data as a a dataloader object
+# implement plotting of fancy graphs for better understanding of results
+def train_nn(dataloader,encoder,model,label_type,epochs):
+    model.train()
+    optimizer = optim.Adam(model.parameters(),lr=0.001)
+    criterion = nn.CrossEntropyLoss()
     for epoch in range(epochs):
-        for row in range(min(data.shape[0],4)):
-            row_data = torch.tensor(data[row].toarray())
-            recon = model(row_data)
-            loss = criterion(recon,row_data)
+        for batch in dataloader:
+            feature = batch.X
+            pred = model(feature)
+            if label_type == 'AutoEnc': 
+                label = feature
+            elif label_type == 'sc':
+                label = torch.FloatTensor(encoder.transform(batch.obs['supercluster_term'].to_numpy()[:,None]).todense())
+            loss = criterion(pred,label)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -79,12 +74,7 @@ class Encoder(nn.Module): # maybe will be used?
     def encode(self,x):
         return self.encoder(x)
 
-    def embed(self,data,mapping=None):
-        if mapping:
-            data = align(mapping,data)
-        assert data.shape[1] == self.emb_count
-
-class BasicNeuralNetwork(nn.module): # basic neural network architecture with dropout and ReLu as activation
+class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
     def __init__(self,emb_genes,cell_types):
         super().__init__()
         self.emb_count = len(emb_genes)
@@ -98,15 +88,21 @@ class BasicNeuralNetwork(nn.module): # basic neural network architecture with dr
             if i > 1: # Do not want to drop from first layer due to sparse input
                 model_layers.append(nn.Dropout(p=0.4))
             model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
-            model_layers.append(nn.BatchNorm2d(self.layer_dim[i-1]))
+            model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
             model_layers.append(nn.LeakyReLU())
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
         model_layers.append(nn.Sigmoid())
         self.model = nn.Sequential(*model_layers)
 
-        torch.nn.init.kaimeng_uniform_(self.model.parameters)
+        def init_normal(module):
+            if type(module) == nn.Linear:
+                nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
+                nn.init.zeros_(module.bias)
+        
+        self.apply(init_normal)
 
     def forward(self,x):
+        #a_pred = encoder.inverse_transform(NeuralNetwork.forward(torch.FloatTensor(adata.X.todense())).detach().numpy())
         return self.model(x)
 
 
