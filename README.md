@@ -1,7 +1,5 @@
 # Single cell RNA annotation model
 
-![Cool cell](http://url/to/img.png)
-
 ## Project
 
 This is a bachelor thesis in Computer Science at KTH. 
@@ -23,6 +21,6 @@ These datasets have been created by Linnarsson labs project: https://github.com/
 
 ### Authors
 
-[Johan Lindqvist]
+Johan Lindqvist
 
-[Fredrik Ström]
+Fredrik Ström  
