@@ -11,19 +11,17 @@
 import scanpy as sc
 #import numpy as np
 #import pandas as pd
-import harmonypy as hrm
+#import harmonypy as hrm
 #import scvi
 #import skmisc
 #import scanorama
-import sklearn as sk
 #import xgboost
 #import pynndescent
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
-
-
+from anndata.experimental import AnnLoader
+import anndata as ad
+from scipy import sparse
+from sklearn.preprocessing import OneHotEncoder
+from torch import cuda
 #def doublet_removal(adata): # remove doublet genes which may cause issues between clusters
 #  # fairly poor implementation and very slow. Doublets are few on linarsson data so not necessary
 #  scvi.model.SCVI.setup_anndata(adata)
@@ -37,6 +35,48 @@ from sklearn.model_selection import train_test_split
 #  doublets = df[df.prediction == 'doublet']
 #  adata.obs['doublet'] = adata.obs.index.isin(doublets.index)
 #  adata = adata[~adata.obs.doublet]
+
+
+def load_data(filename):
+  adata = sc.read_h5ad(filename=filename)
+  preprocessing(adata)
+  adata = adata[:,adata.var.sort_values(by='Gene').index]
+  encoder = OneHotEncoder(handle_unknown='ignore')
+  encoder.fit(adata.obs['supercluster_term'].to_numpy()[:,None])
+  return adata,encoder
+# loads data and normalizes it
+# returns as a Annloader object for usage with torch models
+def create_annloader(adata,batch_size=1000):
+  return AnnLoader(adata,batch_size=batch_size,shuffle=True,use_cuda=False)
+
+
+
+def align(mapping,data):
+  # realigns data to fit mapping using matrix multiplication
+  # uses efficient sparse matrix mult.
+  # requires data sorted according to gene order
+  return sparse.csr_matrix.dot(data,mapping)
+
+def map_genes(emb_genes,gene_expr):
+  # map genes to the same format as training data as a matrix
+  # the mapping is a sparse matrix 
+  # that when multiplied with data transforms it into the same shape as the embedders training data
+  # assumes data has been sorted along genes
+  emb_count = len(emb_genes)
+  gene_count = len(gene_expr)
+  i,j = 0,0
+  mapping = np.zeros((gene_count,emb_count))
+  while i < emb_count and j < gene_count:
+      if emb_genes[i] == gene_expr[j]:
+          mapping[i][j] = 1
+          i += 1
+          j += 1
+      elif emb_genes[i] < gene_expr[j]:
+          i += 1
+      else:
+          j += 1
+  return sparse.csr_matrix(mapping)
+
 
 def preprocessing(adata,min_genes=-1,min_cells=-1,filter_highly_variable=False):
   if min_genes != -1: # remove cells with fewer than min_genes counts
