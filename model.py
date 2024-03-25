@@ -20,8 +20,11 @@ import torch
 # implement plotting of fancy graphs for better understanding of results
 def train_nn(dataloader,encoder,model,label_type,epochs):
     model.train()
-    optimizer = optim.Adam(model.parameters(),lr=0.001)
-    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
+    if label_type == 'AutoEnc':
+        criterion = nn.MSELoss()
+    elif label_type == 'sc':
+        criterion = nn.CrossEntropyLoss()
     for epoch in range(epochs):
         for batch in dataloader:
             feature = batch.X
@@ -36,7 +39,7 @@ def train_nn(dataloader,encoder,model,label_type,epochs):
             optimizer.step()
         print(f'Epoch:{epoch+1}, Loss:{loss.item():.4f}')
 
-class Encoder(nn.Module): # maybe will be used?
+class AutoEncoder(nn.Module): # maybe will be used?
     
     def __init__(self,emb_genes):
         super().__init__()
@@ -49,21 +52,28 @@ class Encoder(nn.Module): # maybe will be used?
             if i > 1:
                 encoder_layers.append(nn.Dropout(p=0.4))
             encoder_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
-            encoder_layers.append(nn.BatchNorm2d(self.layer_dims[i]))
+            encoder_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
             encoder_layers.append(nn.LeakyReLU())
         self.encoder = nn.Sequential(*encoder_layers)
         decoder_layers = []
         for i in range(len(self.layer_dims)-2,-1,-1):
-            decoder_layers.append(nn.BatchNorm2d(self.layer_dims[i+1]))
-            if i > 0:
+            if i < len(self.layer_dims)-2 and i > 0:
                 decoder_layers.append(nn.Dropout(p=0.4))
             decoder_layers.append(nn.Linear(self.layer_dims[i+1],self.layer_dims[i]))
-            encoder_layers.append(nn.BatchNorm2d(self.layer_dims[i]))
-            decoder_layers.append(nn.LeakyReLU())
+            decoder_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
+            if i > 0:
+                decoder_layers.append(nn.LeakyReLU())
+        decoder_layers.append(nn.ReLU())
         self.decoder = nn.Sequential(*decoder_layers)
 
-        nn.init.kaiming_uniform_(self.encoder.params) # There is strange behaviour related to def init, unclear if patched
-        nn.init.kaiming_uniform_(self.decoder.params)
+        def init_kaiming(module):
+            if type(module) == nn.Linear:
+                nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
+                nn.init.zeros_(module.bias)
+        
+        self.encoder.apply(init_kaiming)
+        self.decoder.apply(init_kaiming)
+
    
             #outputs.append((epoch,batch,recon))
         
@@ -94,17 +104,18 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         model_layers.append(nn.Sigmoid())
         self.model = nn.Sequential(*model_layers)
 
-        def init_normal(module):
+        def init_kaiming(module):
             if type(module) == nn.Linear:
                 nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
                 nn.init.zeros_(module.bias)
         
-        self.apply(init_normal)
+        self.model.apply(init_kaiming)
 
     def forward(self,x):
-        #a_pred = encoder.inverse_transform(NeuralNetwork.forward(torch.FloatTensor(adata.X.todense())).detach().numpy())
         return self.model(x)
 
+    def predict(self,encoder,x):
+        return encoder.inverse_transform(self.forward(x).detach().numpy())
 
 
 class SimpleModel:

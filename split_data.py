@@ -38,5 +38,6 @@ def split_chunk(num,splits=4):
     for i in range(splits):
         ind = perm[i*split_size:(i+1)*split_size]
         temp = adata[ind]
-        temp.write('subchunk'+str(num)+'_'+str(i+1)+'.h5ad')
+        temp.write('subchunk'+str(num)+'_'+str(i+1)+'.h5ad',compression='gzip')
 
+split_chunk(1)
