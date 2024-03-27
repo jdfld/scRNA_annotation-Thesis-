@@ -20,7 +20,7 @@ import torch
 # implement plotting of fancy graphs for better understanding of results
 def train_nn(dataloader,encoder,model,label_type,epochs):
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(),lr=model.lr)
     if label_type == 'AutoEnc':
         criterion = nn.MSELoss()
     elif label_type == 'sc':
@@ -45,8 +45,8 @@ class AutoEncoder(nn.Module): # maybe will be used?
         super().__init__()
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
-        self.layer_dims = [self.emb_count,512,128,32]
-        self.lr = 0.001
+        self.layer_dims = [self.emb_count,2048,64]
+        self.lr = 0.005
         encoder_layers = []
         for i in range(1,len(self.layer_dims)):
             if i > 1:
