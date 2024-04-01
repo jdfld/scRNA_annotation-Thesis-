@@ -9,7 +9,7 @@
 #!pip install louvain
 
 import scanpy as sc
-#import numpy as np
+import numpy as np
 #import pandas as pd
 #import harmonypy as hrm
 #import scvi
@@ -68,7 +68,7 @@ def map_genes(emb_genes,gene_expr):
   mapping = np.zeros((gene_count,emb_count))
   while i < emb_count and j < gene_count:
       if emb_genes[i] == gene_expr[j]:
-          mapping[i][j] = 1
+          mapping[j][i] = 1
           i += 1
           j += 1
       elif emb_genes[i] < gene_expr[j]:
@@ -103,7 +103,7 @@ def integration(adata,method='harmony',key='donor_id'):
   return adata
 
 def neighbor_umap(adata,use_rep,plot=False,color=None):
-  sc.pp.neighbors(adata,n_pcs=min(50,),use_rep=use_rep)
+  sc.pp.neighbors(adata,n_pcs=min(128,adata.obsm[use_rep].shape[1]),use_rep=use_rep)
   # Create Umap
   sc.tl.umap(adata)
   if plot:# Plot Umap
@@ -113,7 +113,7 @@ def pipeline(file_adress):
   adata = sc.read_h5ad(file_adress)
   preprocessing(adata,min_genes=500,min_cells=10,filter_highly_variable=True)
   pca(adata)
-  adata = integration(adata)
+  #adata = integration(adata)
   return adata
 
 def community(adata,method='leiden',resolution=1):
