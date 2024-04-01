@@ -21,7 +21,7 @@ from anndata.experimental import AnnLoader
 import anndata as ad
 from scipy import sparse
 from sklearn.preprocessing import OneHotEncoder
-from torch import cuda
+from sklearn.preprocessing import LabelEncoder
 #def doublet_removal(adata): # remove doublet genes which may cause issues between clusters
 #  # fairly poor implementation and very slow. Doublets are few on linarsson data so not necessary
 #  scvi.model.SCVI.setup_anndata(adata)
@@ -41,8 +41,8 @@ def load_data(filename):
   adata = sc.read_h5ad(filename=filename)
   preprocessing(adata)
   adata = adata[:,adata.var.sort_values(by='Gene').index]
-  encoder = OneHotEncoder(handle_unknown='ignore')
-  encoder.fit(adata.obs['supercluster_term'].to_numpy()[:,None])
+  encoder = LabelEncoder()
+  encoder.fit(adata.obs['supercluster_term'])
   return adata,encoder
 # loads data and normalizes it
 # returns as a Annloader object for usage with torch models
@@ -103,7 +103,7 @@ def integration(adata,method='harmony',key='donor_id'):
   return adata
 
 def neighbor_umap(adata,use_rep,plot=False,color=None):
-  sc.pp.neighbors(adata,n_pcs=50,use_rep=use_rep)
+  sc.pp.neighbors(adata,n_pcs=min(50,),use_rep=use_rep)
   # Create Umap
   sc.tl.umap(adata)
   if plot:# Plot Umap

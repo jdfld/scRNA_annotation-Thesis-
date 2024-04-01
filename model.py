@@ -19,25 +19,35 @@ import torch
 # expects data as a a dataloader object
 # implement plotting of fancy graphs for better understanding of results
 def train_nn(dataloader,encoder,model,label_type,epochs):
+    print('cc')
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(),lr=model.lr)
+    print('dd')
     if label_type == 'AutoEnc':
         criterion = nn.MSELoss()
     elif label_type == 'sc':
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.NLLLoss()
+    print('skr')
     for epoch in range(epochs):
         for batch in dataloader:
+            print(batch.X)
+            print('tt')
             feature = batch.X
+            print('at')
             pred = model(feature)
             if label_type == 'AutoEnc': 
                 label = feature
             elif label_type == 'sc':
+                print('mt')
                 label = torch.FloatTensor(encoder.transform(batch.obs['supercluster_term'].to_numpy()[:,None]).todense())
+            print('st')
             loss = criterion(pred,label)
+            print('lt')
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
         print(f'Epoch:{epoch+1}, Loss:{loss.item():.4f}')
+    model.eval()
 
 class AutoEncoder(nn.Module): # maybe will be used?
     
@@ -84,6 +94,44 @@ class AutoEncoder(nn.Module): # maybe will be used?
     def encode(self,x):
         return self.encoder(x)
 
+class ResidualNeuralNetwork(nn.Module):
+    def __init__(self,emb_genes,cell_types):
+        super().__init__()
+        print('init')
+        self.emb_count = len(emb_genes)
+        self.emb_genes = emb_genes
+        self.cell_count = len(cell_types)
+        self.cell_types = emb_genes
+        print('copy')
+        self.layer_dims = [self.emb_count,512,512,self.cell_count]
+        self.lr = 0.001
+        model_layers = []
+        print('mod')
+        for i in range(len(self.layer_dims)):
+            model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
+        self.model = nn.ModuleList(model_layers)
+        print('layers')
+        def init_kaiming(module):
+            if type(module) == nn.Linear:
+                nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
+                nn.init.zeros_(module.bias)
+        print('aba')
+        self.model.apply(init_kaiming)
+        print('comp')
+        print('aa')
+
+    def forward(self,x):
+        print('aa')
+        x = nn.BatchNorm1d(self.model[0](nn.LeakyReLU(x)))
+        for i in range(1,len(self.model)-1):
+            x = nn.BatchNorm1d(nn.LeakyReLU(nn.Dropout(p=0.5)(self.model[i](x)))) + x
+        print('bb')
+        return nn.LogSoftmax(self.model[-1](x))
+
+    def predict(self,encoder,x):
+        return encoder.inverse_transform(self.forward(x).detach().numpy())
+
+
 class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
     def __init__(self,emb_genes,cell_types):
         super().__init__()
@@ -91,17 +139,18 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         self.emb_genes = emb_genes
         self.cell_count = len(cell_types)
         self.cell_types = emb_genes
-        self.layer_dims = [self.emb_count,512,512,512,self.cell_count]
+        self.layer_dims = [self.emb_count,512,512,512,512,self.cell_count]
         self.lr = 0.001
         model_layers = []
         for i in range(1,len(self.layer_dims)-1):
             if i > 1: # Do not want to drop from first layer due to sparse input
                 model_layers.append(nn.Dropout(p=0.4))
+            model_layers.append(nn.LeakyReLU())
             model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
             model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
-            model_layers.append(nn.LeakyReLU())
+        model_layers.append(nn.LeakyReLU())
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
-        model_layers.append(nn.Sigmoid())
+        model_layers.append(nn.LogSoftmax())
         self.model = nn.Sequential(*model_layers)
 
         def init_kaiming(module):
@@ -138,7 +187,6 @@ class SimpleModel:
         y = self.encoder.transform(y)
         if y is not np.array:
             y = y.toarray()
-        pred = self.model.predict(X)
         return sk.metrics.accuracy_score(y_true=y,y_pred=self.predict(X))
 
     def fit(self,X,y):
