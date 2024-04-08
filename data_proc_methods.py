@@ -22,6 +22,8 @@ import anndata as ad
 from scipy import sparse
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import LabelEncoder
+import torch
+
 #def doublet_removal(adata): # remove doublet genes which may cause issues between clusters
 #  # fairly poor implementation and very slow. Doublets are few on linarsson data so not necessary
 #  scvi.model.SCVI.setup_anndata(adata)
@@ -41,13 +43,23 @@ def load_data(filename):
   adata = sc.read_h5ad(filename=filename)
   preprocessing(adata)
   adata = adata[:,adata.var.sort_values(by='Gene').index]
+  return adata
+
+def get_encoder(adata):
   encoder = LabelEncoder()
   encoder.fit(adata.obs['supercluster_term'])
-  return adata,encoder
+  return encoder
 # loads data and normalizes it
 # returns as a Annloader object for usage with torch models
-def create_annloader(adata,batch_size=1000):
-  return AnnLoader(adata,batch_size=batch_size,shuffle=True,use_cuda=False)
+def create_annloader(adata,encoder,batch_size=1000,use_cuda=False):
+  #experiment = torch.sparse_csr_tensor(adata.X.indptr,adata.X.indices,adata.X.data,size=adata.X.shape)
+  # genes= torch.LongTensor(encoder.transform(adata.obs['supercluster_term']))
+  # set = torch.utils.data.TensorDataset(experiment,genes)
+  # dataloader = torch.utils.data.DataLoader(set,batch_size=2000,shuffle=True)
+  # should be a more effective and fast way of doing the initial matrix multiplication,
+  # however to make it work we need to implement a function called collate_fn since that isn't compatible with sparse csr data
+  adata.obsm['label'] = torch.LongTensor(encoder.transform(adata.obs['supercluster_term']))
+  return AnnLoader(adata,batch_size=batch_size,shuffle=True,use_cuda=use_cuda)
 
 
 

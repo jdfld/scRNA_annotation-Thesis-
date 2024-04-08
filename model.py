@@ -5,48 +5,39 @@ import torch
 
 # improvements to NN:
 # LR scheduling, currently the loss improvement is weirdly terrible
-# it almost appears to be fully taught after just a single batch of 1000 samples
-# try smaller batch sizes
-# fix issues with using GPUs
-# would be nice to look into what would be necessary in order to actually run stuff on google cloud
-# deeper/wider https://blog.research.google/2021/05/do-wide-and-deep-networks-learn-same.html
+# it almost appears to be fully taught after just a single batch of 1000 samples, why? should require a lot more data to learn the couple of million parameters
 # more data
-# perhaps more fancy techniques such as skip connections 
-# 
 # test on differently sampled data and data from other source.
 # current model can achieve 98.6 % accuracy on unseen data
 # when sampled from the same distribution (training, subchunk1_0) (validation, subchunk1_1)
 # expects data as a a dataloader object
 # implement plotting of fancy graphs for better understanding of results
-def train_nn(dataloader,encoder,model,label_type,epochs):
-    print('cc')
+def train(dataloader,model,label_type,epochs,start_epoch=0):
     model.train()
     optimizer = torch.optim.Adam(model.parameters(),lr=model.lr)
     if label_type == 'AutoEnc':
         criterion = nn.MSELoss()
     elif label_type == 'sc':
         criterion = nn.NLLLoss()
-    print('skr')
-    for epoch in range(epochs):
-        for batch in dataloader:
-            print(batch.X)
-            print('tt')
-            feature = batch.X
-            print('at')
-            pred = model(feature)
-            if label_type == 'AutoEnc': 
-                label = feature
-            elif label_type == 'sc':
-                print('mt')
-                label = torch.FloatTensor(encoder.transform(batch.obs['supercluster_term'].to_numpy()[:,None]).todense())
-            print('st')
-            loss = criterion(pred,label)
-            print('lt')
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        print(f'Epoch:{epoch+1}, Loss:{loss.item():.4f}')
+    for epoch in range(start_epoch,epochs):
+        loss = train_epoch(dataloader=dataloader,model=model,label_type=label_type,optimizer=optimizer,criterion=criterion)
+        print(f'Epoch:{epoch+1}, Loss:{loss:.4f}')
     model.eval()
+
+def train_epoch(dataloader,model,label_type,optimizer,criterion):
+    for batch in dataloader:
+        feature = batch.X
+        pred = model(feature)
+        if label_type == 'AutoEnc': 
+            label = feature
+        elif label_type == 'sc':
+            label = batch.obsm['label']
+        loss = criterion(pred,label)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    return loss.item()
+
 
 class AutoEncoder(nn.Module): # maybe will be used?
     
@@ -94,41 +85,46 @@ class AutoEncoder(nn.Module): # maybe will be used?
         return self.encoder(x)
 
 class ResidualNeuralNetwork(nn.Module):
-    def __init__(self,emb_genes,cell_types):
+    def __init__(self,emb_genes,cell_types,layer_dims,lr):
         super().__init__()
-        print('init')
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
         self.cell_count = len(cell_types)
         self.cell_types = emb_genes
-        print('copy')
-        self.layer_dims = [self.emb_count,512,512,self.cell_count]
-        self.lr = 0.001
+        self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
+        self.lr = lr
+        self.avg_matrix = []
         model_layers = []
-        print('mod')
-        for i in range(len(self.layer_dims)):
-            model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
+        for i in range(1,len(self.layer_dims)):
+            n,m = self.layer_dims[i-1],self.layer_dims[i]
+            if n == m:
+                cur_matrix = torch.eye(n)
+            else:
+                cur_matrix = torch.zeros(n,m)
+                k = m//n
+                t = m%n
+                for i in range(n-t):
+                    cur_matrix[i][k*i:k*(i+1)] = n/m
+                for i in range(n-t,n):
+                    cur_matrix[i][(k+1)*i-n+t:(k+1)*(i+1)-n+t] = n/m
+            self.avg_matrix.append(cur_matrix)
+            single_layer = [nn.LeakyReLU(),nn.Dropout(p=0.5),nn.Linear(n,m),nn.BatchNorm1d(m)]
+            model_layers.append(nn.Sequential(*single_layer))
+        model_layers.append(nn.Sequential(nn.LogSoftmax(dim=1)))
         self.model = nn.ModuleList(model_layers)
-        print('layers')
         def init_kaiming(module):
             if type(module) == nn.Linear:
                 nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
                 nn.init.zeros_(module.bias)
-        print('aba')
         self.model.apply(init_kaiming)
-        print('comp')
-        print('aa')
 
     def forward(self,x):
-        print('aa')
-        x = nn.BatchNorm1d(self.model[0](nn.LeakyReLU(x)))
-        for i in range(1,len(self.model)-1):
-            x = nn.BatchNorm1d(nn.LeakyReLU(nn.Dropout(p=0.5)(self.model[i](x)))) + x
-        print('bb')
-        return nn.LogSoftmax(self.model[-1](x))
+        for i,layer in enumerate(self.model[:-1]):
+            x = layer(x) + torch.matmul(x,self.avg_matrix[i])
+        return self.model[-1](x)
 
     def predict(self,encoder,x):
-        return encoder.inverse_transform(self.forward(x).detach().numpy())
+        return encoder.inverse_transform(self.forward(x).detach().numpy().argmax(dim=1))
 
 
 class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
