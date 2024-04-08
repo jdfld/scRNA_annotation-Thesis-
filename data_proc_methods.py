@@ -39,10 +39,10 @@ import torch
 #  adata = adata[~adata.obs.doublet]
 
 
-def load_data(filename):
+def load_data(filename, gene_location='Gene'):
   adata = sc.read_h5ad(filename=filename)
   preprocessing(adata)
-  adata = adata[:,adata.var.sort_values(by='Gene').index]
+  adata = adata[:,adata.var.sort_values(by=gene_location).index]
   return adata
 
 def get_encoder(adata):

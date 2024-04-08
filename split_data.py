@@ -40,4 +40,15 @@ def split_chunk(num,splits=4):
         temp = adata[ind]
         temp.write('subchunk'+str(num)+'_'+str(i+1)+'.h5ad',compression='gzip')
 
-split_chunk(1)
+def split_subchunk(num,k,splits=4):
+    adata = sc.read_h5ad('subchunk'+str(num)+'_'+str(k)+'.h5ad')
+    rng = np.random.default_rng(seed=53)
+    perm = rng.permutation(adata.shape[0])
+    split_size = adata.shape[0]//splits
+    for i in range(splits):
+        ind = perm[i*split_size:(i+1)*split_size]
+        temp = adata[ind]
+        temp.write('gridchunk'+str(k)+'_'+str(num)+'_'+str(i+1)+'.h5ad',compression='gzip')
+
+#split_chunk(1)
+split_subchunk(1,1)

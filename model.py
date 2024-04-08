@@ -128,14 +128,14 @@ class ResidualNeuralNetwork(nn.Module):
 
 
 class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
-    def __init__(self,emb_genes,cell_types):
+    def __init__(self,emb_genes,cell_types, layer_dims, lr):
         super().__init__()
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
         self.cell_count = len(cell_types)
         self.cell_types = emb_genes
-        self.layer_dims = [self.emb_count,512,512,512,512,self.cell_count]
-        self.lr = 0.001
+        self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
+        self.lr = lr
         model_layers = []
         for i in range(1,len(self.layer_dims)-1):
             if i > 1: # Do not want to drop from first layer due to sparse input
@@ -145,7 +145,7 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
             model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
         model_layers.append(nn.LeakyReLU())
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
-        model_layers.append(nn.LogSoftmax())
+        model_layers.append(nn.LogSoftmax(dim=1))
         self.model = nn.Sequential(*model_layers)
 
         def init_kaiming(module):
