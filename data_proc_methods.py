@@ -58,7 +58,7 @@ def create_annloader(adata,encoder,batch_size=1000,use_cuda=False):
   # dataloader = torch.utils.data.DataLoader(set,batch_size=2000,shuffle=True)
   # should be a more effective and fast way of doing the initial matrix multiplication,
   # however to make it work we need to implement a function called collate_fn since that isn't compatible with sparse csr data
-  adata.obsm['label'] = torch.LongTensor(encoder.transform(adata.obs['supercluster_term']))
+  adata.obsm['label'] = torch.FloatTensor(encoder.transform(adata.obs['supercluster_term']))
   return AnnLoader(adata,batch_size=batch_size,shuffle=True,use_cuda=use_cuda)
 
 

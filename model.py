@@ -17,21 +17,22 @@ def train(dataloader,model,label_type,epochs,start_epoch=0):
     optimizer = torch.optim.Adam(model.parameters(),lr=model.lr)
     if label_type == 'AutoEnc':
         criterion = nn.MSELoss()
-    elif label_type == 'sc':
+    else:
         criterion = nn.NLLLoss()
     for epoch in range(start_epoch,epochs):
         loss = train_epoch(dataloader=dataloader,model=model,label_type=label_type,optimizer=optimizer,criterion=criterion)
-        print(f'Epoch:{epoch+1}, Loss:{loss:.4f}')
+        print('Epoch:', epoch,', Loss:', loss)
     model.eval()
 
 def train_epoch(dataloader,model,label_type,optimizer,criterion):
     for batch in dataloader:
-        feature = batch.X
+        feature,label = batch
+        feature = feature.to_dense()
         pred = model(feature)
         if label_type == 'AutoEnc': 
             label = feature
-        elif label_type == 'sc':
-            label = batch.obsm['label']
+        #elif label_type == 'sc':
+        #    label = batch.obsm['label']
         loss = criterion(pred,label)
         optimizer.zero_grad()
         loss.backward()
@@ -93,21 +94,19 @@ class ResidualNeuralNetwork(nn.Module):
         self.cell_types = emb_genes
         self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
         self.lr = lr
-        self.avg_matrix = []
+        self.avg_matrix = [None] * len(self.layer_dims)
+        self.res_weight = torch.full((len(self.layer_dims),1),0.2)
+        self.res_weight.requires_grad=True
         model_layers = []
         for i in range(1,len(self.layer_dims)):
             n,m = self.layer_dims[i-1],self.layer_dims[i]
-            if n == m:
-                cur_matrix = torch.eye(n)
-            else:
-                cur_matrix = torch.zeros(n,m)
+            if n!=m:
                 k = m//n
                 t = m%n
-                for i in range(n-t):
-                    cur_matrix[i][k*i:k*(i+1)] = n/m
-                for i in range(n-t,n):
-                    cur_matrix[i][(k+1)*i-n+t:(k+1)*(i+1)-n+t] = n/m
-            self.avg_matrix.append(cur_matrix)
+                self.avg_matrix[i] = torch.sparse_csr_tensor(
+                    [k*i for i in range(n-t)]+[(k+1)*i for i in range(n-t,n)],
+                    list(range(m)),
+                    [n/m]*m,size=(n,m))                
             single_layer = [nn.LeakyReLU(),nn.Dropout(p=0.5),nn.Linear(n,m),nn.BatchNorm1d(m)]
             model_layers.append(nn.Sequential(*single_layer))
         model_layers.append(nn.Sequential(nn.LogSoftmax(dim=1)))
@@ -120,7 +119,11 @@ class ResidualNeuralNetwork(nn.Module):
 
     def forward(self,x):
         for i,layer in enumerate(self.model[:-1]):
-            x = layer(x) + torch.matmul(x,self.avg_matrix[i])
+            x = layer(x)
+            if self.avg_matrix != None:
+                x += self.res_weight[i] * torch.mm(x,self.avg_matrix[i])
+            else:
+                x += self.res_weight[i] * x
         return self.model[-1](x)
 
     def predict(self,encoder,x):
@@ -140,13 +143,13 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         for i in range(1,len(self.layer_dims)-1):
             if i > 1: # Do not want to drop from first layer due to sparse input
                 model_layers.append(nn.Dropout(p=0.4))
-            model_layers.append(nn.LeakyReLU())
             model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
             model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
-        model_layers.append(nn.LeakyReLU())
+            model_layers.append(nn.LeakyReLU())
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
         model_layers.append(nn.LogSoftmax(dim=1))
         self.model = nn.Sequential(*model_layers)
+        #self.model.double()
 
         def init_kaiming(module):
             if type(module) == nn.Linear:
