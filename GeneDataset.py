@@ -12,7 +12,6 @@ import data_proc_methods as dpm
 class GeneDataset(Dataset):
 
     def __init__(self, file_adress,gene_location='Gene',cell_type_location='supercluster_term',encoder=None,batch_size=2000):
-
         adata = sc.read_h5ad(filename=file_adress)
         dpm.preprocessing(adata)
         adata = adata[:,adata.var.sort_values(by=gene_location).index]
@@ -21,6 +20,7 @@ class GeneDataset(Dataset):
             encoder.fit(adata.obs[cell_type_location])
         if encoder is not None:
             self.labels = torch.LongTensor(encoder.transform(adata.obs[cell_type_location]))
+        self.encoder = encoder
         self.genes = adata.var[gene_location]
         self.cells = adata.obs[cell_type_location].cat.categories
         self.features = adata.X
@@ -28,6 +28,8 @@ class GeneDataset(Dataset):
         self.shape = self.features.shape
         self.batch_size = batch_size
     
+    def get_encoder(self):
+        return self.encoder
 
     def __len__(self):
         return self.features.shape[0]

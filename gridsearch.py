@@ -6,8 +6,7 @@ from ray.tune.schedulers import ASHAScheduler
 import torch
 from torch import nn
 import model
-import data_proc_methods as dpm
-import grpc
+import GeneDataset
 
 # https://pytorch.org/tutorials/beginner/hyperparameter_tuning_tutorial.html
 # https://docs.ray.io/en/latest/tune/index.html
@@ -27,17 +26,10 @@ val_file = "/Users/jdfld/Documents/Programmering/KEX/gridchunk1_1_2.h5ad"
 
 
 def objective(config):
-    training_data = dpm.load_data(train_file)
-    encoder = dpm.get_encoder(training_data)
-    train_loader = dpm.create_annloader(training_data,encoder=encoder,batch_size=10,use_cuda=torch.cuda.is_available())
-    # validation data
-    validation_data = dpm.load_data(val_file)
-    val_loader = dpm.create_annloader(validation_data,encoder=encoder,batch_size=10,use_cuda=torch.cuda.is_available())
+    training_data  = GeneDataset.GeneDataset(train_file,encoder=True)
+    validation_data = GeneDataset.GeneDataset(val_file,encoder=training_data.get_encoder())
 
-    genes = training_data.var['Gene'] 
-    cells = training_data.obs['supercluster_term'].cat.categories
-
-    net = model.BasicNeuralNetwork(genes,cells,[1],config['lr'])
+    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,[1],config['lr'])
     device = 'cpu'
     if torch.cuda.is_available():
         device = "cuda:0"
@@ -54,10 +46,10 @@ def objective(config):
     criterion = nn.NLLLoss()
     while True:
         net.train()
-        loss = model.train_epoch(dataloader=train_loader,model=net,label_type='sc',optimizer=optimizer,criterion=criterion)
+        loss = model.train_epoch(dataloader=training_data,model=net,label_type='sc',optimizer=optimizer,criterion=criterion)
         net.eval()
         with torch.no_grad():
-            acc = net.predict(val_loader)
+            acc = net.predict(validation_data)
             train.report({"mean_accuracy":acc})
 # 512*60000 + 1024*2048 + 512*1024 + 512*256 + 256*128
 ray.init()
