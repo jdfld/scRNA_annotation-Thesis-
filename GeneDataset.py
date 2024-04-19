@@ -35,14 +35,25 @@ class GeneDataset(Dataset):
         return self.features.shape[0]
 
     def __getitem__(self,i):
-        indptr = torch.from_numpy(self.features[i].indptr).type(torch.IntTensor)
-        indices = torch.from_numpy(self.features[i].indices).type(torch.IntTensor)
-        data = torch.from_numpy(self.features[i].data).type(torch.FloatTensor)
-        feature = torch.sparse_csr_tensor(indptr,indices,data,size=self.features[i].shape)
+        elem = self.features[i]
+        indptr = torch.from_numpy(elem.indptr).type(torch.IntTensor)
+        indices = torch.from_numpy(elem.indices).type(torch.IntTensor)
+        data = torch.from_numpy(elem.data).type(torch.FloatTensor)
+        feature = torch.sparse_csr_tensor(indptr,indices,data,size=elem.shape).to_dense()
         label = self.labels[i]
+        device = 'cpu'
+        if torch.cuda.is_available():
+            device = "cuda:0"
+        elif torch.backends.mps.is_available():
+            device = 'mps'
+        feature = feature.to(device)
+        label = label.to(device)
         return feature,label
     
-
+    def get_batch(self):
+        indices = torch.randint(low=0,high=len(self),size=(self.batch_size,))
+        return self[indices]
+    
     def __iter__(self):
         sizes  = torch.randint(low=0,high=len(self),size=((len(self)+self.batch_size-1)//self.batch_size,self.batch_size))
         for size in sizes:

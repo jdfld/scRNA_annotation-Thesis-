@@ -1,4 +1,5 @@
 import sklearn as sk
+from sklearn.metrics import accuracy_score
 import numpy as np
 from torch import nn
 import torch
@@ -27,7 +28,6 @@ def train(dataloader,model,label_type,epochs,start_epoch=0):
 def train_epoch(dataloader,model,label_type,optimizer,criterion):
     for batch in dataloader:
         feature,label = batch
-        feature = feature.to_dense()
         pred = model(feature)
         if label_type == 'AutoEnc': 
             label = feature
@@ -71,6 +71,7 @@ class AutoEncoder(nn.Module): # maybe will be used?
             if type(module) == nn.Linear:
                 nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
                 nn.init.zeros_(module.bias)
+    
         
         self.encoder.apply(init_kaiming)
         self.decoder.apply(init_kaiming)
@@ -127,11 +128,11 @@ class ResidualNeuralNetwork(nn.Module):
         return self.model[-1](x)
 
     def predict(self,encoder,x):
-        return encoder.inverse_transform(self.forward(x).detach().numpy().argmax(dim=1))
+        return encoder.inverse_transform(self.forward(x).detach().numpy().argmax())
 
 
 class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
-    def __init__(self,emb_genes,cell_types, layer_dims, lr):
+    def __init__(self,emb_genes,cell_types, encoder,layer_dims, lr):
         super().__init__()
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
@@ -144,12 +145,12 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
             if i > 1: # Do not want to drop from first layer due to sparse input
                 model_layers.append(nn.Dropout(p=0.4))
             model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
-            model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
             model_layers.append(nn.LeakyReLU())
+            model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
         model_layers.append(nn.LogSoftmax(dim=1))
         self.model = nn.Sequential(*model_layers)
-        #self.model.double()
+        self.encoder = encoder
 
         def init_kaiming(module):
             if type(module) == nn.Linear:
@@ -161,8 +162,20 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
     def forward(self,x):
         return self.model(x)
 
-    def predict(self,encoder,x):
-        return encoder.inverse_transform(self.forward(x).detach().numpy())
+    def predict_decode(self,x):
+        y = self.predict(x)
+        return self.encoder.inverse_transform(y)
+
+
+    def predict(self,x):
+        y = self.forward(x)
+        y = y.cpu()
+        return y.detach().argmax(dim=1).numpy()
+    
+
+    def predict_acc(self,X,y):
+        y = y.cpu()
+        return accuracy_score(y_true=y,y_pred=self.predict(X))
 
 
 class SimpleModel:
