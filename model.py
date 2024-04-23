@@ -25,7 +25,8 @@ def train(dataloader,model,label_type,epochs,start_epoch=0):
         print('Epoch:', epoch,', Loss:', loss)
     model.eval()
 
-def train_epoch(dataloader,model,label_type,optimizer,criterion):
+def train_epoch(dataloader,model,label_type,optimizer,criterion,batches=-1):
+    batch_count = 0
     for batch in dataloader:
         feature,label = batch
         pred = model(feature)
@@ -37,6 +38,9 @@ def train_epoch(dataloader,model,label_type,optimizer,criterion):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        if batch_count == batches:
+            break
+        batch_count += 1
     return loss.item()
 
 
@@ -87,8 +91,10 @@ class AutoEncoder(nn.Module): # maybe will be used?
         return self.encoder(x)
 
 class ResidualNeuralNetwork(nn.Module):
+    # bad performance, may need more trials#
     def __init__(self,emb_genes,cell_types,layer_dims,lr):
         super().__init__()
+        
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
         self.cell_count = len(cell_types)
@@ -96,7 +102,7 @@ class ResidualNeuralNetwork(nn.Module):
         self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
         self.lr = lr
         self.avg_matrix = [None] * len(self.layer_dims)
-        self.res_weight = torch.full((len(self.layer_dims),1),0.2)
+        self.res_weight = torch.full((len(self.layer_dims),1),1)
         self.res_weight.requires_grad=True
         model_layers = []
         for i in range(1,len(self.layer_dims)):
