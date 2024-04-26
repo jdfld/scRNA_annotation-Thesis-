@@ -31,10 +31,10 @@ def split_raw_data():
         chunk.write('data_chunk'+str(i)+'.h5ad',compression='gzip')
 
 def get_small_data():
-    monkey = "C:/Users/random/Documents/KEX_data_stuff/monkeydata.h5ad"
-    frontotemporal = "C:/Users/random/Documents/KEX_data_stuff/frontotemporal.h5ad"
-    striatum = "C:/Users/random/Documents/KEX_data_stuff/striatum.h5ad"
-    anteriorcingulatecortex = "C:/Users/random/Documents/KEX_data_stuff/anteriorcingulatecortex.h5ad"
+    monkey = "monkey.h5ad"
+    frontotemporal = "FrontoTemporal.h5ad"
+    striatum = "Striatum.h5ad"
+    anteriorcingulatecortex = "AnteriorCingulateCortex.h5ad"
 
     m_data = sc.read_h5ad(filename=monkey,backed='r')
     ft_data = sc.read_h5ad(filename=frontotemporal,backed='r')

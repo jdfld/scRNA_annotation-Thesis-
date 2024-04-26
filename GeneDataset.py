@@ -11,7 +11,7 @@ import data_proc_methods as dpm
 
 class GeneDataset(Dataset):
 
-    def __init__(self, file_adress,gene_location='Gene',cell_type_location='supercluster_term',encoder=None,batch_size=2000):
+    def __init__(self, file_adress,gene_location='Gene',cell_type_location='supercluster_term',map_genes=None,encoder=None,batch_size=2000,shuffle=True):
         adata = sc.read_h5ad(filename=file_adress)
         dpm.preprocessing(adata)
         adata = adata[:,adata.var.sort_values(by=gene_location).index]
@@ -23,10 +23,20 @@ class GeneDataset(Dataset):
         self.encoder = encoder
         self.genes = adata.var[gene_location]
         self.cells = adata.obs[cell_type_location].cat.categories
-        self.features = adata.X
+        if map_genes is None:
+            self.features = adata.X
+        else:
+            mapping = dpm.map_genes(map_genes,self.genes)
+            self.features = dpm.align(mapping,adata.X)
         self.features.data = self.features.data.astype(np.float32)
         self.shape = self.features.shape
         self.batch_size = batch_size
+        self.no_batches = (len(self)+batch_size-1) // batch_size
+        if shuffle == False:
+            self.indices = torch.randint(low=0,high=len(self),size=((len(self)+self.batch_size-1)//self.batch_size,self.batch_size))
+        else:
+            self.indices = None
+
     
     def get_encoder(self):
         return self.encoder
@@ -46,16 +56,20 @@ class GeneDataset(Dataset):
             device = "cuda:0"
         elif torch.backends.mps.is_available():
             device = 'mps'
-        feature = feature.to(device)
-        label = label.to(device)
+        #feature = feature.to(device)
+        #label = label.to(device)
         return feature,label
     
-    def get_batch(self):
-        indices = torch.randint(low=0,high=len(self),size=(self.batch_size,))
-        return self[indices]
+    def get_batch(self,i=0):
+        if self.indices is None:
+            return self[torch.randint(low=0,high=len(self),size=(self.batch_size,))]
+        return self[self.indices[i]]
     
     def __iter__(self):
-        sizes  = torch.randint(low=0,high=len(self),size=((len(self)+self.batch_size-1)//self.batch_size,self.batch_size))
-        for size in sizes:
-            yield self[size]
+        if self.indices is None:
+            indices  = torch.randint(low=0,high=len(self),size=(self.no_batches,self.batch_size))
+        else:
+            indices = self.indices
+        for index in indices:
+            yield self[index]
 

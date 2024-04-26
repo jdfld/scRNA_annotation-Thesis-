@@ -2,7 +2,9 @@ import sklearn as sk
 from sklearn.metrics import accuracy_score
 import numpy as np
 from torch import nn
+import copy
 import torch
+
 
 # improvements to NN:
 # LR scheduling, currently the loss improvement is weirdly terrible
@@ -138,14 +140,19 @@ class ResidualNeuralNetwork(nn.Module):
 
 
 class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
-    def __init__(self,emb_genes,cell_types, encoder,layer_dims, lr):
+    def __init__(self,emb_genes,cell_types, encoder,layer_dims, lr,copy=False):
         super().__init__()
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
         self.cell_count = len(cell_types)
         self.cell_types = emb_genes
-        self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
         self.lr = lr
+        self.encoder = encoder
+        if copy:
+            self.layer_dims = None
+            self.model = None
+            return
+        self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
         model_layers = []
         for i in range(1,len(self.layer_dims)-1):
             if i > 1: # Do not want to drop from first layer due to sparse input
@@ -156,7 +163,6 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
         model_layers.append(nn.LogSoftmax(dim=1))
         self.model = nn.Sequential(*model_layers)
-        self.encoder = encoder
 
         def init_kaiming(module):
             if type(module) == nn.Linear:
@@ -165,6 +171,16 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         
         self.model.apply(init_kaiming)
 
+        device = 'cpu'
+        if torch.cuda.is_available():
+            device = "cuda:0"
+        elif torch.backends.mps.is_available():
+            if not torch.backends.mps.is_built():
+                print("MPS not available because the current PyTorch install was not "
+                    "built with MPS enabled.")
+            device = 'mps'
+        #self.to(device)
+
     def forward(self,x):
         return self.model(x)
 
@@ -172,12 +188,19 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         y = self.predict(x)
         return self.encoder.inverse_transform(y)
 
-
     def predict(self,x):
         y = self.forward(x)
         y = y.cpu()
         return y.detach().argmax(dim=1).numpy()
     
+    def copy_model(self,new_cells,new_encoder): # creates a shallow copy of the object itself
+        new_model = BasicNeuralNetwork(self.emb_genes,new_cells,new_encoder,None,self.lr,copy=True)
+        new_model.layer_dims = self.layer_dims[:-1]
+        new_model.layer_dims.append(new_model.cell_count)
+        new_model.model = self.model[:-2] # remove previous output layer
+        new_model.model.append(nn.Linear(self.layer_dims[-2],new_model.cell_count)).append(nn.LogSoftmax(dim=1))
+        new_model.to(next(self.parameters()).device)
+        return new_model
 
     def predict_acc(self,X,y):
         y = y.cpu()

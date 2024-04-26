@@ -74,20 +74,30 @@ def map_genes(emb_genes,gene_expr):
   # the mapping is a sparse matrix 
   # that when multiplied with data transforms it into the same shape as the embedders training data
   # assumes data has been sorted along genes
-  emb_count = len(emb_genes)
-  gene_count = len(gene_expr)
-  i,j = 0,0
-  mapping = np.zeros((gene_count,emb_count))
-  while i < emb_count and j < gene_count:
-      if emb_genes[i] == gene_expr[j]:
-          mapping[j][i] = 1
-          i += 1
-          j += 1
-      elif emb_genes[i] < gene_expr[j]:
-          i += 1
+  emb_iter = iter(emb_genes)
+  expr_iter = iter(gene_expr)
+  emb_ind = []
+  expr_ind = []
+  try: 
+    cur_emb,cur_expr = next(emb_iter),next(expr_iter)
+    i = j = 0
+    while cur_emb and cur_expr:
+      if cur_emb == cur_expr:
+        emb_ind.append(i)
+        expr_ind.append(j)
+        i += 1
+        j += 1
+        cur_emb,cur_expr = next(emb_iter),next(expr_iter)
+      elif cur_emb < cur_expr:
+        i += 1
+        cur_emb = next(emb_iter)
       else:
-          j += 1
-  return sparse.csr_matrix(mapping)
+        j += 1
+        cur_expr = next(expr_iter)
+  except StopIteration:
+    pass
+  data = np.ones_like(emb_ind, dtype=int)
+  return sparse.csr_matrix((data, (expr_ind,emb_ind)), shape=(len(gene_expr),len(emb_genes)))
 
 
 def preprocessing(adata,min_genes=-1,min_cells=-1,filter_highly_variable=False):

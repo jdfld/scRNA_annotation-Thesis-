@@ -7,8 +7,10 @@ import torch
 from torch import nn
 import model
 import GeneDataset
+import data_proc_methods as dpm
 import grpc
-
+from copy import deepcopy
+import numpy as np
 # https://pytorch.org/tutorials/beginner/hyperparameter_tuning_tutorial.html
 # https://docs.ray.io/en/latest/tune/index.html
 # params={'lr': 0.0005037405705207463, 'batch_size': 577, 'layer_dim_0': 383, 'layer_dim_1': 445, 'layer_dim_2': 171, 'layer_dim_3': 47}
@@ -20,13 +22,13 @@ import grpc
 #]
 #channel = grpc.insecure_channel(url, options=options)
 
-train_file = "C:/Users/random/Documents/KEX_data_stuff/gridchunk1_1_1.h5ad"
-val_file = "C:/Users/random/Documents/KEX_data_stuff/gridchunk2_1_2.h5ad"
+train_file = "/Users/jdfld/Documents/Programmering/KEX/gridchunk1_1_1.h5ad"
+val_file = "/Users/jdfld/Documents/Programmering/KEX/gridchunk1_1_2.h5ad"
 
-#monkey = "C:/Users/random/Documents/KEX_data_stuff/monkey_chunk.h5ad"
-#frontotemporal = "C:/Users/random/Documents/KEX_data_stuff/frontotemporal_chunk.h5ad"
-#striatum = "C:/Users/random/Documents/KEX_data_stuff/striatum_chunk.h5ad"
-#anteriorcingulatecortex = "C:/Users/random/Documents/KEX_data_stuff/anteriorcingulatecortex_chunk.h5ad"
+monkey = "/Users/jdfld/Documents/Programmering/KEX/monkey_chunk.h5ad"
+frontotemporal = "/Users/jdfld/Documents/Programmering/KEX/fronto_temporal_chunk.h5ad"
+striatum = "/Users/jdfld/Documents/Programmering/KEX/striatum_chunk.h5ad"
+anteriorcingulatecortex = "/Users/jdfld/Documents/Programmering/KEX/anteriorcingulatecortex_chunk.h5ad"
 
 
 
@@ -35,60 +37,85 @@ val_file = "C:/Users/random/Documents/KEX_data_stuff/gridchunk2_1_2.h5ad"
 
 
 def objective(config):
-    training_data  = GeneDataset.GeneDataset(train_file,encoder=True,batch_size=config["batch_size"])
-
+    training_data  = GeneDataset.GeneDataset(train_file,encoder=True,batch_size=1000)
     validation_data = GeneDataset.GeneDataset(val_file,encoder=training_data.get_encoder())
 
-    #mon_data = GeneDataset.GeneDataset(monkey,encoder=True,batch_size=100)
-    #frt_data = GeneDataset.GeneDataset(frontotemporal,encoder=True,batch_size=100)
-    #str_data = GeneDataset.GeneDataset(striatum,encoder=True,batch_size=100)
-    #ant_data = GeneDataset.GeneDataset(anteriorcingulatecortex,encoder=True,batch_size=100)
-
-
+    mon_data = GeneDataset.GeneDataset(monkey,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
+    frt_data = GeneDataset.GeneDataset(frontotemporal,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
+    str_data = GeneDataset.GeneDataset(striatum,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
+    ant_data = GeneDataset.GeneDataset(anteriorcingulatecortex,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
     layer_dims = []
     i = 0
+
+
     while "layer_dims_"+str(i) in config:
-        i+=1
         layer_dims.append(config["layer_dims_"+str(i)])
+        i+=1
 
     net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'])
-    device = 'cpu'
-    if torch.cuda.is_available():
-        device = "cuda:0"
-    elif torch.backends.mps.is_available():
-        if not torch.backends.mps.is_built():
-            print("MPS not available because the current PyTorch install was not "
-                "built with MPS enabled.")
-        device = 'mps'
-    net.to(device)
     
-    
-
-
+    mon_net = net.copy_model(mon_data.cells,mon_data.encoder)
+    frt_net = net.copy_model(frt_data.cells,frt_data.encoder)
+    str_net = net.copy_model(str_data.cells,str_data.encoder)
+    ant_net = net.copy_model(str_data.cells,str_data.encoder)
     # dot(Wq * in, Wk * in) * Wv*in 
     # Wq = Wk = t,m
     # Wv = g,m
-     
+    rng = np.random.default_rng(seed=42)
     optimizer = torch.optim.Adam(net.parameters(),lr=net.lr)
+    mon_opt = torch.optim.Adam(mon_net.parameters(),lr=mon_net.lr)
+    frt_opt = torch.optim.Adam(frt_net.parameters(),lr=frt_net.lr)
+    str_opt = torch.optim.Adam(str_net.parameters(),lr=str_net.lr)
+    ant_opt = torch.optim.Adam(ant_net.parameters(),lr=ant_net.lr)
     criterion = nn.NLLLoss()
     while True:
         net.train()
+        for parameters in net.model.parameters():
+            parameters.requires_grad = True
+        
         loss = model.train_epoch(dataloader=training_data,model=net,label_type='sc',optimizer=optimizer,criterion=criterion)
-        net.eval()
-
+        mon_net.train()
+        model.train_epoch(dataloader=mon_data,model=mon_net,label_type='sc',optimizer=mon_opt,criterion=criterion,batches=1)
+        mon_net.eval()
+        frt_net.train()
+        model.train_epoch(dataloader=frt_data,model=frt_net,label_type='sc',optimizer=frt_opt,criterion=criterion,batches=1)
+        frt_net.eval()
+        str_net.train()
+        model.train_epoch(dataloader=str_data,model=str_net,label_type='sc',optimizer=str_opt,criterion=criterion,batches=1)
+        str_net.eval()
+        ant_net.train()
+        model.train_epoch(dataloader=ant_data,model=ant_net,label_type='sc',optimizer=ant_opt,criterion=criterion,batches=1)
+        ant_net.eval()
         # setup other networks
-        net[:-1]
-
-
+        net.eval()
 
 
         with torch.no_grad():
-            acc = net.predict_acc(*validation_data.get_batch())
+            acc = net.predict_acc(*validation_data.get_batch()) / 5
+
+            ind = rng.integers(1,mon_data.no_batches)
+            acc += mon_net.predict_acc(*mon_data.get_batch(ind)) / 5
+            ind = rng.integers(1,frt_data.no_batches)
+            acc += frt_net.predict_acc(*frt_data.get_batch(ind)) / 5
+            ind = rng.integers(1,str_data.no_batches)
+            acc += str_net.predict_acc(*str_data.get_batch(ind)) / 5
+            ind = rng.integers(1,ant_data.no_batches)
+            acc += ant_net.predict_acc(*ant_data.get_batch(ind)) / 5
 
             train.report({"mean_accuracy":acc})
-# 512*60000 + 1024*2048 + 512*1024 + 512*256 + 256*128
+# 59480 * resolution + resolution * width
+# 
+# f.e 59480 * 512 + 512 * 29740 + 29740 * 512 + 512 * 14295
+# init_width
+# init_res
+# init_depth 
+# 
+# 59480 * 512 + 512 * 20000 + 20000*256 + 256*
+# 2 = width  
+#  
+#  width + resolution * depth = 2
 ray.init()
-param_space = {"lr":tune.loguniform(1e-4,1e-2),"batch_size":tune.qrandint(500,1000),"layer_dim_0":tune.qrandint(0,500),"layer_dim_1":tune.qrandint(0,500),"layer_dim_2":tune.qrandint(0,500),"layer_dim_3":tune.qrandint(0,500)}
+param_space = {"lr":tune.loguniform(1e-4,1e-2),"layer_dims_0":tune.qrandint(256,768,24),"layer_dims_1":tune.qrandint(1024,8192,96),"layer_dims_2":tune.qrandint(256,768,24),"layer_dims_3":tune.qrandint(32,512,8)}
 algo = OptunaSearch()
 
 tuner = tune.Tuner(
