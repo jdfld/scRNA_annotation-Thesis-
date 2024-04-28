@@ -56,14 +56,17 @@ class GeneDataset(Dataset):
             device = "cuda:0"
         elif torch.backends.mps.is_available():
             device = 'mps'
-        #feature = feature.to(device)
-        #label = label.to(device)
+        feature = feature.to(device)
+        label = label.to(device)
         return feature,label
     
     def get_batch(self,i=0):
         if self.indices is None:
             return self[torch.randint(low=0,high=len(self),size=(self.batch_size,))]
-        return self[self.indices[i]]
+        elif i is not int:
+            return self[self.indices[i].view(-1)]
+        else:
+            return self[self.indices[i]]
     
     def __iter__(self):
         if self.indices is None:

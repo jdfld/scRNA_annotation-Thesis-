@@ -22,13 +22,16 @@ import numpy as np
 #]
 #channel = grpc.insecure_channel(url, options=options)
 
-train_file = "/Users/jdfld/Documents/Programmering/KEX/gridchunk1_1_1.h5ad"
-val_file = "/Users/jdfld/Documents/Programmering/KEX/gridchunk1_1_2.h5ad"
+# path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
+path = "C:/Users/random/Documents/KEX_data_stuff/" # win
 
-monkey = "/Users/jdfld/Documents/Programmering/KEX/monkey_chunk.h5ad"
-frontotemporal = "/Users/jdfld/Documents/Programmering/KEX/fronto_temporal_chunk.h5ad"
-striatum = "/Users/jdfld/Documents/Programmering/KEX/striatum_chunk.h5ad"
-anteriorcingulatecortex = "/Users/jdfld/Documents/Programmering/KEX/anteriorcingulatecortex_chunk.h5ad"
+train_file = path+"gridchunk1_1_1.h5ad"
+val_file = path+"gridchunk1_1_2.h5ad"
+
+monkey = path+"monkey_chunk.h5ad"
+frontotemporal = path+"fronto_temporal_chunk.h5ad"
+striatum = path+"striatum_chunk.h5ad"
+anteriorcingulatecortex = path+"anteriorcingulatecortex_chunk.h5ad"
 
 
 
@@ -94,13 +97,13 @@ def objective(config):
             acc = net.predict_acc(*validation_data.get_batch()) / 5
 
             ind = rng.integers(1,mon_data.no_batches)
-            acc += mon_net.predict_acc(*mon_data.get_batch(ind)) / 5
+            acc += mon_net.predict_acc(*mon_data.get_batch(range(1,mon_data.no_batches))) / 5
             ind = rng.integers(1,frt_data.no_batches)
-            acc += frt_net.predict_acc(*frt_data.get_batch(ind)) / 5
+            acc += frt_net.predict_acc(*frt_data.get_batch(range(1,mon_data.no_batches))) / 5
             ind = rng.integers(1,str_data.no_batches)
-            acc += str_net.predict_acc(*str_data.get_batch(ind)) / 5
+            acc += str_net.predict_acc(*str_data.get_batch(range(1,mon_data.no_batches))) / 5
             ind = rng.integers(1,ant_data.no_batches)
-            acc += ant_net.predict_acc(*ant_data.get_batch(ind)) / 5
+            acc += ant_net.predict_acc(*ant_data.get_batch(range(1,mon_data.no_batches))) / 5
 
             train.report({"mean_accuracy":acc})
 # 59480 * resolution + resolution * width

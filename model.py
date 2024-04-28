@@ -149,6 +149,7 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         self.lr = lr
         self.encoder = encoder
         if copy:
+            self.device = None
             self.layer_dims = None
             self.model = None
             return
@@ -179,7 +180,8 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
                 print("MPS not available because the current PyTorch install was not "
                     "built with MPS enabled.")
             device = 'mps'
-        #self.to(device)
+        self.to(device)
+        self.device = device
 
     def forward(self,x):
         return self.model(x)
@@ -199,7 +201,8 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         new_model.layer_dims.append(new_model.cell_count)
         new_model.model = self.model[:-2] # remove previous output layer
         new_model.model.append(nn.Linear(self.layer_dims[-2],new_model.cell_count)).append(nn.LogSoftmax(dim=1))
-        new_model.to(next(self.parameters()).device)
+        new_model.to(self.device)
+        new_model.device = self.device
         return new_model
 
     def predict_acc(self,X,y):
