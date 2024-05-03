@@ -20,6 +20,8 @@ class GeneDataset(Dataset):
             encoder.fit(adata.obs[cell_type_location])
         if encoder is not None:
             self.labels = torch.LongTensor(encoder.transform(adata.obs[cell_type_location]))
+        else:
+            self.labels = None
         self.encoder = encoder
         self.genes = adata.var[gene_location]
         self.cells = adata.obs[cell_type_location].cat.categories
@@ -37,7 +39,9 @@ class GeneDataset(Dataset):
         else:
             self.indices = None
 
-    
+    def get_all(self):
+        return self[range(0,len(self))]
+
     def get_encoder(self):
         return self.encoder
 
@@ -50,13 +54,15 @@ class GeneDataset(Dataset):
         indices = torch.from_numpy(elem.indices).type(torch.IntTensor)
         data = torch.from_numpy(elem.data).type(torch.FloatTensor)
         feature = torch.sparse_csr_tensor(indptr,indices,data,size=elem.shape).to_dense()
-        label = self.labels[i]
         device = 'cpu'
         if torch.cuda.is_available():
             device = "cuda:0"
         elif torch.backends.mps.is_available():
             device = 'mps'
         feature = feature.to(device)
+        if label is None:
+            return feature
+        label = self.labels[i]
         label = label.to(device)
         return feature,label
     

@@ -22,8 +22,8 @@ import numpy as np
 #]
 #channel = grpc.insecure_channel(url, options=options)
 
-# path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
-path = "C:/Users/random/Documents/KEX_data_stuff/" # win
+path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
+#path = "C:/Users/random/Documents/KEX_data_stuff/" # win
 
 train_file = path+"gridchunk1_1_1.h5ad"
 val_file = path+"gridchunk1_1_2.h5ad"
@@ -55,7 +55,7 @@ def objective(config):
         layer_dims.append(config["layer_dims_"+str(i)])
         i+=1
 
-    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'])
+    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'],double=False,norm='layer')
     
     mon_net = net.copy_model(mon_data.cells,mon_data.encoder)
     frt_net = net.copy_model(frt_data.cells,frt_data.encoder)
@@ -72,11 +72,10 @@ def objective(config):
     ant_opt = torch.optim.Adam(ant_net.parameters(),lr=ant_net.lr)
     criterion = nn.NLLLoss()
     while True:
-        net.train()
-        for parameters in net.model.parameters():
-            parameters.requires_grad = True
-        
+        net.train()    
+        net.reheat()
         loss = model.train_epoch(dataloader=training_data,model=net,label_type='sc',optimizer=optimizer,criterion=criterion)
+        net.freeze()
         mon_net.train()
         model.train_epoch(dataloader=mon_data,model=mon_net,label_type='sc',optimizer=mon_opt,criterion=criterion,batches=1)
         mon_net.eval()
@@ -94,18 +93,13 @@ def objective(config):
 
 
         with torch.no_grad():
-            acc = net.predict_acc(*validation_data.get_batch()) / 5
-
-            ind = rng.integers(1,mon_data.no_batches)
-            acc += mon_net.predict_acc(*mon_data.get_batch(range(1,mon_data.no_batches))) / 5
-            ind = rng.integers(1,frt_data.no_batches)
-            acc += frt_net.predict_acc(*frt_data.get_batch(range(1,mon_data.no_batches))) / 5
-            ind = rng.integers(1,str_data.no_batches)
-            acc += str_net.predict_acc(*str_data.get_batch(range(1,mon_data.no_batches))) / 5
-            ind = rng.integers(1,ant_data.no_batches)
-            acc += ant_net.predict_acc(*ant_data.get_batch(range(1,mon_data.no_batches))) / 5
-
-            train.report({"mean_accuracy":acc})
+            val_acc = net.predict_acc(*validation_data.get_batch(range(validation_data.no_batches)))
+            mon_acc = mon_net.predict_acc(*mon_data.get_batch(range(1,mon_data.no_batches)))
+            frt_acc = frt_net.predict_acc(*frt_data.get_batch(range(1,frt_data.no_batches)))
+            str_acc = str_net.predict_acc(*str_data.get_batch(range(1,str_data.no_batches)))
+            ant_acc = ant_net.predict_acc(*ant_data.get_batch(range(1,ant_data.no_batches)))
+            tot_acc = (val_acc+mon_acc+frt_acc+str_acc+ant_acc)/5
+            train.report({"mean_accuracy":tot_acc,"val_acc":val_acc,"str_acc":str_acc,"ant_acc":ant_acc,"frt_acc":frt_acc,"mon_acc":mon_acc})
 # 59480 * resolution + resolution * width
 # 
 # f.e 59480 * 512 + 512 * 29740 + 29740 * 512 + 512 * 14295
@@ -118,7 +112,7 @@ def objective(config):
 #  
 #  width + resolution * depth = 2
 ray.init()
-param_space = {"lr":tune.loguniform(1e-4,1e-2),"layer_dims_0":tune.qrandint(256,768,24),"layer_dims_1":tune.qrandint(1024,8192,96),"layer_dims_2":tune.qrandint(256,768,24),"layer_dims_3":tune.qrandint(32,512,8)}
+param_space = {"lr":tune.loguniform(5*1e-4,1e-3),"layer_dims_0":tune.qrandint(128,512,16),"layer_dims_1":tune.qrandint(128,8192,256),"layer_dims_2":tune.qrandint(128,512,16),"layer_dims_3":tune.qrandint(128,512,16),"layer_dims_4":tune.qrandint(32,128,8)}
 algo = OptunaSearch()
 
 tuner = tune.Tuner(
@@ -128,7 +122,7 @@ tuner = tune.Tuner(
         metric="mean_accuracy",
         mode="max",
         search_alg=algo,
-        num_samples=100,
+        num_samples=40,
     ),
     run_config=train.RunConfig(
         stop={"training_iteration":10},

@@ -140,7 +140,7 @@ class ResidualNeuralNetwork(nn.Module):
 
 
 class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dropout and ReLu as activation
-    def __init__(self,emb_genes,cell_types, encoder,layer_dims, lr,copy=False):
+    def __init__(self,emb_genes,cell_types, encoder,layer_dims, lr,double=False,copy=False,norm='batch'):
         super().__init__()
         self.emb_count = len(emb_genes)
         self.emb_genes = emb_genes
@@ -155,12 +155,18 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
             return
         self.layer_dims = [self.emb_count]+list(filter(lambda x:x!=0,layer_dims))+[self.cell_count]
         model_layers = []
-        for i in range(1,len(self.layer_dims)-1):
+        step = 1+double
+        for i in range(1,len(self.layer_dims)-1,step):
             if i > 1: # Do not want to drop from first layer due to sparse input
                 model_layers.append(nn.Dropout(p=0.4))
             model_layers.append(nn.Linear(self.layer_dims[i-1],self.layer_dims[i]))
+            if double == True:
+                model_layers.append(nn.Linear(self.layer_dims[i],self.layer_dims[i+1],bias=False))
             model_layers.append(nn.LeakyReLU())
-            model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
+            if norm == 'layer':
+                model_layers.append(nn.LayerNorm(self.layer_dims[i]))
+            if norm == 'batch':
+                model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
         model_layers.append(nn.LogSoftmax(dim=1))
         self.model = nn.Sequential(*model_layers)
@@ -168,7 +174,8 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
         def init_kaiming(module):
             if type(module) == nn.Linear:
                 nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
-                nn.init.zeros_(module.bias)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
         
         self.model.apply(init_kaiming)
 
@@ -182,6 +189,14 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
             device = 'mps'
         self.to(device)
         self.device = device
+
+    def freeze(self):
+        for p in self.model.parameters():
+            p.requires_grad = False
+        
+    def reheat(self):
+        for p in self.model.parameters():
+            p.requires_grad = True
 
     def forward(self,x):
         return self.model(x)
