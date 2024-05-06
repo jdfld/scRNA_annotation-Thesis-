@@ -15,27 +15,21 @@ import torch
 # when sampled from the same distribution (training, subchunk1_0) (validation, subchunk1_1)
 # expects data as a a dataloader object
 # implement plotting of fancy graphs for better understanding of results
-def train(dataloader,model,label_type,epochs,start_epoch=0):
+def train(dataloader,model,epochs,label_type=" ",start_epoch=0):
     model.train()
     optimizer = torch.optim.Adam(model.parameters(),lr=model.lr)
-    if label_type == 'AutoEnc':
-        criterion = nn.MSELoss()
-    else:
-        criterion = nn.NLLLoss()
+    
+    criterion = nn.NLLLoss()
     for epoch in range(start_epoch,epochs):
-        loss = train_epoch(dataloader=dataloader,model=model,label_type=label_type,optimizer=optimizer,criterion=criterion)
+        loss = train_epoch(dataloader=dataloader,model=model,optimizer=optimizer,criterion=criterion)
         print('Epoch:', epoch,', Loss:', loss)
     model.eval()
 
-def train_epoch(dataloader,model,label_type,optimizer,criterion,batches=-1):
+def train_epoch(dataloader,model,optimizer,criterion,batches=-1):
     batch_count = 0
     for batch in dataloader:
         feature,label = batch
         pred = model(feature)
-        if label_type == 'AutoEnc': 
-            label = feature
-        #elif label_type == 'sc':
-        #    label = batch.obsm['label']
         loss = criterion(pred,label)
         optimizer.zero_grad()
         loss.backward()
@@ -164,9 +158,9 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
                 model_layers.append(nn.Linear(self.layer_dims[i],self.layer_dims[i+1],bias=False))
             model_layers.append(nn.LeakyReLU())
             if norm == 'layer':
-                model_layers.append(nn.LayerNorm(self.layer_dims[i]))
+                model_layers.append(nn.LayerNorm(self.layer_dims[i+double]))
             if norm == 'batch':
-                model_layers.append(nn.BatchNorm1d(self.layer_dims[i]))
+                model_layers.append(nn.BatchNorm1d(self.layer_dims[i+double]))
         model_layers.append(nn.Linear(self.layer_dims[-2],self.layer_dims[-1]))
         model_layers.append(nn.LogSoftmax(dim=1))
         self.model = nn.Sequential(*model_layers)
@@ -176,7 +170,7 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
                 nn.init.kaiming_uniform_(module.weight,nonlinearity='leaky_relu')
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
-        
+
         self.model.apply(init_kaiming)
 
         device = 'cpu'
@@ -187,7 +181,8 @@ class BasicNeuralNetwork(nn.Module): # basic neural network architecture with dr
                 print("MPS not available because the current PyTorch install was not "
                     "built with MPS enabled.")
             device = 'mps'
-        self.to(device)
+        device = 'cpu'
+        #self.to(device)
         self.device = device
 
     def freeze(self):

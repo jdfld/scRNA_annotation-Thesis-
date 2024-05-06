@@ -76,4 +76,9 @@ def split_subchunk(num,k,splits=4):
         temp = adata[ind]
         temp.write('gridchunk'+str(k)+'_'+str(num)+'_'+str(i+1)+'.h5ad')
 
-get_small_data()
+def decompress(filename):
+    adata = sc.read_h5ad(filename=filename)
+    adata.write(filename=filename)
+
+#get_small_data()
+decompress('subchunk1_2.h5ad')

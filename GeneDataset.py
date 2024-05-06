@@ -49,7 +49,13 @@ class GeneDataset(Dataset):
         return self.features.shape[0]
 
     def __getitem__(self,i):
-        elem = self.features[i]
+        feature = self.features[i]
+        feature =  torch.FloatTensor(feature.todense())
+        if self.labels is None:
+            return feature
+        label = self.labels[i]
+        return feature,label
+        label = self.labels[i]
         indptr = torch.from_numpy(elem.indptr).type(torch.IntTensor)
         indices = torch.from_numpy(elem.indices).type(torch.IntTensor)
         data = torch.from_numpy(elem.data).type(torch.FloatTensor)
@@ -59,11 +65,11 @@ class GeneDataset(Dataset):
             device = "cuda:0"
         elif torch.backends.mps.is_available():
             device = 'mps'
-        feature = feature.to(device)
-        if label is None:
+        #feature = feature.to(device)
+        if self.labels is None:
             return feature
         label = self.labels[i]
-        label = label.to(device)
+        #label = label.to(device)
         return feature,label
     
     def get_batch(self,i=0):

@@ -22,10 +22,10 @@ import numpy as np
 #]
 #channel = grpc.insecure_channel(url, options=options)
 
-path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
-#path = "C:/Users/random/Documents/KEX_data_stuff/" # win
+#path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
+path = "C:/Users/random/Documents/KEX_data_stuff/" # win
 
-train_file = path+"gridchunk1_1_1.h5ad"
+train_file = path+"subchunk1_2.h5ad"
 val_file = path+"gridchunk1_1_2.h5ad"
 
 monkey = path+"monkey_chunk.h5ad"
@@ -40,8 +40,8 @@ anteriorcingulatecortex = path+"anteriorcingulatecortex_chunk.h5ad"
 
 
 def objective(config):
-    training_data  = GeneDataset.GeneDataset(train_file,encoder=True,batch_size=1000)
-    validation_data = GeneDataset.GeneDataset(val_file,encoder=training_data.get_encoder())
+    training_data  = GeneDataset.GeneDataset(train_file,encoder=True,batch_size=2000)
+    validation_data = GeneDataset.GeneDataset(val_file,encoder=training_data.get_encoder(),shuffle=False)
 
     mon_data = GeneDataset.GeneDataset(monkey,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
     frt_data = GeneDataset.GeneDataset(frontotemporal,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
@@ -49,13 +49,27 @@ def objective(config):
     ant_data = GeneDataset.GeneDataset(anteriorcingulatecortex,gene_location='feature_name',cell_type_location='cell_type',map_genes = training_data.genes,encoder=True,batch_size=100,shuffle=False)
     layer_dims = []
     i = 0
+    
+    param_sum = config["alpha"] + config["beta"] + config["gamma"] + config["delta"]
+    in_width = round(8*3*(config["alpha"] / param_sum)+256)
+    out_width = round(500*8*(config["beta"] / param_sum)+5048)
+    width_decay = 0.087*8*(config["gamma"] / param_sum)+0.6
+    depth = round(8*(config["delta"] / param_sum)+2)
+    cost = len(training_data.genes)*in_width
+    layer_dims.append(in_width)
 
+    for i in range(depth):
+        cost+=2*in_width*out_width*width_decay**i
+        layer_dims.append(round(out_width*width_decay**i))
+        layer_dims.append(in_width)
+    layer_dims.append(config["final_layer"])
+    print(layer_dims,cost)
 
     while "layer_dims_"+str(i) in config:
         layer_dims.append(config["layer_dims_"+str(i)])
         i+=1
 
-    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'],double=False,norm='layer')
+    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'],double=True,norm='layer')
     
     mon_net = net.copy_model(mon_data.cells,mon_data.encoder)
     frt_net = net.copy_model(frt_data.cells,frt_data.encoder)
@@ -73,33 +87,35 @@ def objective(config):
     criterion = nn.NLLLoss()
     while True:
         net.train()    
-        net.reheat()
-        loss = model.train_epoch(dataloader=training_data,model=net,label_type='sc',optimizer=optimizer,criterion=criterion)
-        net.freeze()
+        loss = model.train_epoch(dataloader=training_data,model=net,optimizer=optimizer,criterion=criterion)
         mon_net.train()
-        model.train_epoch(dataloader=mon_data,model=mon_net,label_type='sc',optimizer=mon_opt,criterion=criterion,batches=1)
+        model.train_epoch(dataloader=mon_data,model=mon_net,optimizer=mon_opt,criterion=criterion,batches=1)
         mon_net.eval()
         frt_net.train()
-        model.train_epoch(dataloader=frt_data,model=frt_net,label_type='sc',optimizer=frt_opt,criterion=criterion,batches=1)
+        model.train_epoch(dataloader=frt_data,model=frt_net,optimizer=frt_opt,criterion=criterion,batches=1)
         frt_net.eval()
         str_net.train()
-        model.train_epoch(dataloader=str_data,model=str_net,label_type='sc',optimizer=str_opt,criterion=criterion,batches=1)
+        model.train_epoch(dataloader=str_data,model=str_net,optimizer=str_opt,criterion=criterion,batches=1)
         str_net.eval()
         ant_net.train()
-        model.train_epoch(dataloader=ant_data,model=ant_net,label_type='sc',optimizer=ant_opt,criterion=criterion,batches=1)
+        model.train_epoch(dataloader=ant_data,model=ant_net,optimizer=ant_opt,criterion=criterion,batches=1)
         ant_net.eval()
         # setup other networks
         net.eval()
 
 
         with torch.no_grad():
-            val_acc = net.predict_acc(*validation_data.get_batch(range(validation_data.no_batches)))
+            acc = 0
+            val_acc = 0
+            for f,l in validation_data:
+                val_acc += net.predict_acc(f,l) / validation_data.no_batches
             mon_acc = mon_net.predict_acc(*mon_data.get_batch(range(1,mon_data.no_batches)))
             frt_acc = frt_net.predict_acc(*frt_data.get_batch(range(1,frt_data.no_batches)))
             str_acc = str_net.predict_acc(*str_data.get_batch(range(1,str_data.no_batches)))
             ant_acc = ant_net.predict_acc(*ant_data.get_batch(range(1,ant_data.no_batches)))
             tot_acc = (val_acc+mon_acc+frt_acc+str_acc+ant_acc)/5
-            train.report({"mean_accuracy":tot_acc,"val_acc":val_acc,"str_acc":str_acc,"ant_acc":ant_acc,"frt_acc":frt_acc,"mon_acc":mon_acc})
+            #tot_acc = val_acc
+            train.report({"mean_accuracy":tot_acc,"cost":cost,"val_acc":val_acc,"str_acc":str_acc,"ant_acc":ant_acc,"frt_acc":frt_acc,"mon_acc":mon_acc})
 # 59480 * resolution + resolution * width
 # 
 # f.e 59480 * 512 + 512 * 29740 + 29740 * 512 + 512 * 14295
@@ -111,8 +127,15 @@ def objective(config):
 # 2 = width  
 #  
 #  width + resolution * depth = 2
+
+#  alpha*(beta-1)+alpha*beta
+
+# 
+
 ray.init()
-param_space = {"lr":tune.loguniform(5*1e-4,1e-3),"layer_dims_0":tune.qrandint(128,512,16),"layer_dims_1":tune.qrandint(128,8192,256),"layer_dims_2":tune.qrandint(128,512,16),"layer_dims_3":tune.qrandint(128,512,16),"layer_dims_4":tune.qrandint(32,128,8)}
+#param_space = {"lr":tune.loguniform(1e-4,1e-3),"layer_dims_0":tune.qrandint(128,512,16),"layer_dims_1":tune.qrandint(128,8192,256),"layer_dims_2":tune.qrandint(128,512,16),"layer_dims_3":tune.qrandint(128,512,16),"layer_dims_4":tune.qrandint(32,128,8)}
+param_space = {"lr":tune.loguniform(1e-4,1e-3),"alpha":tune.uniform(1e-3,1),"beta":tune.uniform(1e-3,1),"gamma":tune.uniform(1e-3,0.5),"delta":tune.uniform(1e-3,1),"final_layer":tune.qrandint(32,256,8)}
+#param_space = {"lr":tune.logunifrom}
 algo = OptunaSearch()
 
 tuner = tune.Tuner(
