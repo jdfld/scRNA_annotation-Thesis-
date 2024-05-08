@@ -22,8 +22,8 @@ import numpy as np
 #]
 #channel = grpc.insecure_channel(url, options=options)
 
-#path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
-path = "C:/Users/random/Documents/KEX_data_stuff/" # win
+path = "/Users/jdfld/Documents/Programmering/KEX/" # mac
+#path = "C:/Users/random/Documents/KEX_data_stuff/" # win
 
 train_file = path+"subchunk1_2.h5ad"
 val_file = path+"gridchunk1_1_2.h5ad"
@@ -50,27 +50,36 @@ def objective(config):
     layer_dims = []
     i = 0
     
-    param_sum = config["alpha"] + config["beta"] + config["gamma"] + config["delta"]
-    in_width = round(8*3*(config["alpha"] / param_sum)+256)
-    out_width = round(500*8*(config["beta"] / param_sum)+5048)
-    width_decay = 0.087*8*(config["gamma"] / param_sum)+0.6
-    depth = round(8*(config["delta"] / param_sum)+2)
-    cost = len(training_data.genes)*in_width
-    layer_dims.append(in_width)
+    #param_sum = config["alpha"] + config["beta"] + config["gamma"] + config["delta"]
+    #in_width = round(8*3*(config["alpha"] / param_sum)+256)
+    #out_width = round(500*8*(config["beta"] / param_sum)+5048)
+    #width_decay = 0.087*8*(config["gamma"] / param_sum)+0.6
+    #depth = round(8*(config["delta"] / param_sum)+2)
+    #cost = len(training_data.genes)*in_width
+    #layer_dims.append(in_width)
 
-    for i in range(depth):
-        cost+=2*in_width*out_width*width_decay**i
-        layer_dims.append(round(out_width*width_decay**i))
-        layer_dims.append(in_width)
-    layer_dims.append(config["final_layer"])
-    print(layer_dims,cost)
+    #for i in range(depth):
+    #    cost+=2*in_width*out_width*width_decay**i
+    #    layer_dims.append(round(out_width*width_decay**i))
+    #    layer_dims.append(in_width)
+    #layer_dims.append(config["final_layer"])
+    #print(layer_dims,cost
+    if config["depth"]:
+        cost = config["cost"]
+        input_dim = config["input_dim"]
+        in_width = config["in_width"]
+        decay = config["decay"]
+        depth = config["depth"]
+        out_width = config["out_width"]
+        mid_width = np.sqrt((cost-input_dim*in_width)*(decay**2-1)/(decay*(decay**(2*depth+2)-1)) + (in_width+out_width)*(decay**2-1)/(2*decay*(-1 + decay**(2*depth+2)))- (in_width+out_width)*(decay**2-1)/(2*(decay*(-1 + decay**(2*depth+2)))))
+        layer_dims = [in_width] + [round(mid_width*decay**i) for i in range(int(depth))] + [out_width]
+        
 
     while "layer_dims_"+str(i) in config:
         layer_dims.append(config["layer_dims_"+str(i)])
         i+=1
 
-    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'],double=True,norm='layer')
-    
+    net = model.BasicNeuralNetwork(training_data.genes,training_data.cells,training_data.get_encoder(),layer_dims,config['lr'],norm='layer')
     mon_net = net.copy_model(mon_data.cells,mon_data.encoder)
     frt_net = net.copy_model(frt_data.cells,frt_data.encoder)
     str_net = net.copy_model(str_data.cells,str_data.encoder)
@@ -88,6 +97,7 @@ def objective(config):
     while True:
         net.train()    
         loss = model.train_epoch(dataloader=training_data,model=net,optimizer=optimizer,criterion=criterion)
+        net.freeze()
         mon_net.train()
         model.train_epoch(dataloader=mon_data,model=mon_net,optimizer=mon_opt,criterion=criterion,batches=1)
         mon_net.eval()
@@ -113,9 +123,9 @@ def objective(config):
             frt_acc = frt_net.predict_acc(*frt_data.get_batch(range(1,frt_data.no_batches)))
             str_acc = str_net.predict_acc(*str_data.get_batch(range(1,str_data.no_batches)))
             ant_acc = ant_net.predict_acc(*ant_data.get_batch(range(1,ant_data.no_batches)))
-            tot_acc = (val_acc+mon_acc+frt_acc+str_acc+ant_acc)/5
-            #tot_acc = val_acc
-            train.report({"mean_accuracy":tot_acc,"cost":cost,"val_acc":val_acc,"str_acc":str_acc,"ant_acc":ant_acc,"frt_acc":frt_acc,"mon_acc":mon_acc})
+            #tot_acc = (val_acc+mon_acc+frt_acc+str_acc+ant_acc)/5
+            tot_acc = val_acc
+            train.report({"mean_accuracy":tot_acc,"val_acc":val_acc,"str_acc":str_acc,"ant_acc":ant_acc,"frt_acc":frt_acc,"mon_acc":mon_acc})
 # 59480 * resolution + resolution * width
 # 
 # f.e 59480 * 512 + 512 * 29740 + 29740 * 512 + 512 * 14295
@@ -134,8 +144,16 @@ def objective(config):
 
 ray.init()
 #param_space = {"lr":tune.loguniform(1e-4,1e-3),"layer_dims_0":tune.qrandint(128,512,16),"layer_dims_1":tune.qrandint(128,8192,256),"layer_dims_2":tune.qrandint(128,512,16),"layer_dims_3":tune.qrandint(128,512,16),"layer_dims_4":tune.qrandint(32,128,8)}
-param_space = {"lr":tune.loguniform(1e-4,1e-3),"alpha":tune.uniform(1e-3,1),"beta":tune.uniform(1e-3,1),"gamma":tune.uniform(1e-3,0.5),"delta":tune.uniform(1e-3,1),"final_layer":tune.qrandint(32,256,8)}
+#param_space = {"lr":tune.loguniform(1e-4,1e-3),"alpha":tune.uniform(1e-3,1),"beta":tune.uniform(1e-3,1),"gamma":tune.uniform(1e-3,0.5),"delta":tune.uniform(1e-3,1),"final_layer":tune.qrandint(32,256,8)}
 #param_space = {"lr":tune.logunifrom}
+# 210, 420
+
+param_space = {"cost":25000000,"input_dim":59480,"lr":0.00122,
+               "in_width":tune.randint(210,420),
+               "decay":tune.uniform(0.6,1),
+               "depth":tune.randint(0,10),
+               "out_width":tune.randint(64,256)
+               }
 algo = OptunaSearch()
 
 tuner = tune.Tuner(
