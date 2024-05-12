@@ -10,6 +10,7 @@ import GeneDataset
 import data_proc_methods as dpm
 import grpc
 from copy import deepcopy
+from itertools import chain
 import numpy as np
 # https://pytorch.org/tutorials/beginner/hyperparameter_tuning_tutorial.html
 # https://docs.ray.io/en/latest/tune/index.html
@@ -63,8 +64,8 @@ def objective(config):
     #    layer_dims.append(round(out_width*width_decay**i))
     #    layer_dims.append(in_width)
     #layer_dims.append(config["final_layer"])
-    #print(layer_dims,cost
-    if config["depth"]:
+
+    if config["in_width"]:
         cost = config["cost"]
         input_dim = config["input_dim"]
         in_width = config["in_width"]
@@ -73,6 +74,17 @@ def objective(config):
         out_width = config["out_width"]
         mid_width = np.sqrt((cost-input_dim*in_width)*(decay**2-1)/(decay*(decay**(2*depth+2)-1)) + (in_width+out_width)*(decay**2-1)/(2*decay*(-1 + decay**(2*depth+2)))- (in_width+out_width)*(decay**2-1)/(2*(decay*(-1 + decay**(2*depth+2)))))
         layer_dims = [in_width] + [round(mid_width*decay**i) for i in range(int(depth))] + [out_width]
+
+    if config["downscale"]:
+        cost = config["cost"]
+        input_dim = config["input_dim"]
+        downscale = config["downscale"]
+        decay = config["decay"]
+        depth = config["depth"]
+        out_width = config["out_width"]
+        upscale = (cost-input_dim*downscale-downscale*out_width-downscale*out_width*decay**depth*(decay-1)) / (2*downscale*decay**(depth+1)-1)
+        layer_dims = [in_width] + list(chain(*zip([round(upscale*decay**i) for i in range(depth)],[downscale for _ in range(depth)]))) + [out_width]
+        
         
 
     while "layer_dims_"+str(i) in config:
@@ -147,13 +159,21 @@ ray.init()
 #param_space = {"lr":tune.loguniform(1e-4,1e-3),"alpha":tune.uniform(1e-3,1),"beta":tune.uniform(1e-3,1),"gamma":tune.uniform(1e-3,0.5),"delta":tune.uniform(1e-3,1),"final_layer":tune.qrandint(32,256,8)}
 #param_space = {"lr":tune.logunifrom}
 # 210, 420
-
+# Model 1:
 param_space = {"cost":25000000,"input_dim":59480,"lr":0.00122,
                "in_width":tune.randint(210,420),
                "decay":tune.uniform(0.6,1),
-               "depth":tune.randint(0,10),
+               "depth":tune.randint(0,4),
                "out_width":tune.randint(64,256)
                }
+# Model 2:
+param_space = {"cost":25000000,"input_dim":59480,"lr":0.00122,
+                "downscale": tune.randint(330,410),
+                "decay":tune.uniform(0.6,1),
+                "depth":tune.randint(1,6),
+                "out_width":tune.randint(64,256)
+               }
+
 algo = OptunaSearch()
 
 tuner = tune.Tuner(
